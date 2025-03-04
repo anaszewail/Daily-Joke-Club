@@ -2,69 +2,138 @@ import streamlit as st
 import random
 from datetime import date
 import requests
+import os
 
-# بيانات PayPal Sandbox
-PAYPAL_CLIENT_ID = "AQd5IZObL6YTejqYpN0LxADLMtqbeal1ahbgNNrDfFLcKzMl6goF9BihgMw2tYnb4suhUfprhI-Z8eoC"
-PAYPAL_SECRET = "EPk46EBw3Xm2W-R0Uua8sLsoDLJytgSXqIzYLbbXCk_zSOkdzFx8jEbKbKxhjf07cnJId8gt6INzm6_V"
-PAYPAL_API = "https://api-m.sandbox.paypal.com"
-
-# قائمة نكات بسيطة ومضحكة جدًا
+# Enhanced Joke Collection with More Variety
 jokes = [
+    # English Jokes
     "Why did the tomato turn red? It saw the salad dressing!",
     "What do you call a bear with no teeth? A gummy bear!",
     "Why was the broom late? It swept in!",
-    "What’s orange and sounds like a parrot? A carrot!",
-    "Why don’t eggs tell jokes? They’d crack up!",
-    "What do you call a lazy kangaroo? A pouch potato!",
-    "Why did the banana go to school? It wanted to improve its peel-festeem!"
+    "What's orange and sounds like a parrot? A carrot!",
+    "Why don't eggs tell jokes? They'd crack up!",
+    
+    # Arabic Jokes
+    "لماذا لا يستطيع الكتاب أن يخبر نكتة؟ لأنه سيتمزق من الضحك!",
+    "ما هو شيء يدخل أخضر ويخرج أحمر؟ البطيخ في سباق!",
+    "لماذا لم يذهب الكمبيوتر إلى الحفلة؟ لأنه كان محمولاً!",
+    
+    # Multilingual Fun
+    "Why did the math book look sad? Because it had too many problems!",
+    "كيف يضحك المهندس؟ بالهندسة!"
 ]
 
-# واجهة جذابة باللغة الإنجليزية
-st.title("Daily Joke Club")
-st.write("Subscribe for just $1/month and enjoy a fresh, hilarious joke every day!")
+class JokeClub:
+    def __init__(self):
+        # Enhanced Security: Use Environment Variables
+        self.PAYPAL_CLIENT_ID = os.getenv('PAYPAL_CLIENT_ID', 'default_client_id')
+        self.PAYPAL_SECRET = os.getenv('PAYPAL_SECRET', 'default_secret')
+        self.PAYPAL_API = "https://api-m.sandbox.paypal.com"
 
-# الحصول على رمز الوصول من PayPal Sandbox
-def get_paypal_token():
-    url = f"{PAYPAL_API}/v1/oauth2/token"
-    headers = {"Accept": "application/json", "Accept-Language": "en_US"}
-    data = {"grant_type": "client_credentials"}
-    response = requests.post(url, auth=(PAYPAL_CLIENT_ID, PAYPAL_SECRET), data=data)
-    return response.json().get("access_token") if response.status_code == 200 else None
+    def get_paypal_token(self):
+        """Enhanced PayPal Token Retrieval with Error Handling"""
+        try:
+            url = f"{self.PAYPAL_API}/v1/oauth2/token"
+            headers = {
+                "Accept": "application/json", 
+                "Accept-Language": "en_US"
+            }
+            data = {"grant_type": "client_credentials"}
+            
+            response = requests.post(
+                url, 
+                auth=(self.PAYPAL_CLIENT_ID, self.PAYPAL_SECRET), 
+                data=data, 
+                timeout=10
+            )
+            
+            response.raise_for_status()  # Raise an exception for bad status codes
+            return response.json().get("access_token")
+        
+        except requests.exceptions.RequestException as e:
+            st.error(f"Payment Gateway Error: {e}")
+            return None
 
-# حالة الاشتراك
-if "subscribed" not in st.session_state:
-    st.session_state.subscribed = False
+    def render_joke_app(self):
+        """Main Application Rendering"""
+        st.set_page_config(
+            page_title="Daily Joke Club 😂", 
+            page_icon="🤣", 
+            initial_sidebar_state="expanded"
+        )
 
-if not st.session_state.subscribed:
-    st.info("Join the club for only 3 cents a day and laugh non-stop!")
-    if st.button("Subscribe Now for $1/month"):
-        token = get_paypal_token()
-        if token:
-            st.session_state.subscribed = True
-            st.success("Payment successful! Welcome to the Daily Joke Club!")
-            st.balloons()  # تأثير احتفالي
+        # Multilingual Title
+        st.title("🎭 Daily Joke Club | نادي النكات اليومية")
+        
+        # Sidebar for Additional Information
+        st.sidebar.header("App Features 🌟")
+        st.sidebar.info("""
+        - Daily Fresh Jokes 🃏
+        - Multilingual Support 🌍
+        - Easy Subscription 💳
+        - Share Laughter 😄
+        """)
+
+        # Subscription Management
+        if "subscribed" not in st.session_state:
+            st.session_state.subscribed = False
+
+        if not st.session_state.subscribed:
+            self.render_subscription_section()
         else:
-            st.error("Payment failed. Please try again!")
-    st.markdown("[Pay $1/month via PayPal Sandbox](https://www.sandbox.paypal.com) - Use a test account to subscribe!")
-else:
-    # عرض النكتة اليومية
-    today = date.today().day
-    joke_index = today % len(jokes)
-    daily_joke = jokes[joke_index]
-    st.success(f"Your Daily Joke: {daily_joke}")
-    st.warning("😂 Your daily laugh is ready! Share it and come back tomorrow!")
+            self.render_joke_section()
 
-    # روابط المشاركة
-    whatsapp_link = f"https://wa.me/?text=Check%20out%20this%20hilarious%20joke%20from%20Daily%20Joke%20Club:%20{daily_joke}"
-    telegram_link = f"https://t.me/share/url?url=Daily%20Joke%20Club&text={daily_joke}"
-    twitter_link = f"https://twitter.com/intent/tweet?text={daily_joke}%20-%20From%20Daily%20Joke%20Club"
-    
-    st.subheader("Share the Fun!")
-    st.markdown(f"[Share on WhatsApp]({whatsapp_link}) | [Share on Telegram]({telegram_link}) | [Share on Twitter]({twitter_link})")
-    st.info("Spread the laughter with friends and grow the club!")
+    def render_subscription_section(self):
+        """Subscription UI with Enhanced Engagement"""
+        st.info("🌈 Join the Laughter League! Just $1/month")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("#### Why Subscribe? 🤔")
+            st.write("""
+            - Daily Fresh Jokes
+            - Multilingual Content
+            - Share & Spread Joy
+            - Support Comedy!
+            """)
+        
+        with col2:
+            if st.button("🎉 Subscribe Now!", key="subscribe_btn"):
+                token = self.get_paypal_token()
+                if token:
+                    st.session_state.subscribed = True
+                    st.success("🎊 Welcome to the Joke Club!")
+                    st.balloons()
+                else:
+                    st.error("Payment Failed. Please try again later.")
 
-# تنبيهات تحفيزية
-if st.session_state.subscribed:
-    st.info("🎉 You’re a VIP member! Enjoy your daily dose of fun!")
-else:
-    st.warning("⏰ Don’t miss out! Subscribe now for endless laughs!")
+    def render_joke_section(self):
+        """Enhanced Joke Delivery Section"""
+        # Deterministic Joke Selection
+        today = date.today().day
+        joke_index = today % len(jokes)
+        daily_joke = jokes[joke_index]
+
+        st.success(f"🃏 Today's Joke: {daily_joke}")
+        
+        # Social Sharing with Enhanced Links
+        st.subheader("Share the Laughter! 🤣")
+        
+        sharing_links = {
+            "WhatsApp": f"https://wa.me/?text={daily_joke}",
+            "Telegram": f"https://t.me/share/url?text={daily_joke}",
+            "Twitter": f"https://twitter.com/intent/tweet?text={daily_joke}"
+        }
+        
+        cols = st.columns(len(sharing_links))
+        for i, (platform, link) in enumerate(sharing_links.items()):
+            with cols[i]:
+                st.markdown(f"[{platform}]({link})")
+
+def main():
+    joke_club = JokeClub()
+    joke_club.render_joke_app()
+
+if __name__ == "__main__":
+    main()
