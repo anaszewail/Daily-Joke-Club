@@ -268,7 +268,7 @@ class DailyJokeClub:
             "WhatsApp": f"https://wa.me/?text={encoded_joke}%20-%20Join%20Daily%20Joke%20Club%20at%20{app_url}{tracking_param}%20😂",
             "Telegram": f"https://t.me/share/url?url={app_url}{tracking_param}&text={encoded_joke}%20-%20Daily%20Joke%20Club",
             "Twitter": f"https://twitter.com/intent/tweet?text={encoded_joke}%20%23DailyJokeClub%20{app_url}{tracking_param}",
-            "Facebook": f"https://www.facebook.com/sharer/sharer.php?u={app_url}{tracking_param}"e={encoded_joke}",
+            "Facebook": f"https://www.facebook.com/sharer/sharer.php?u={app_url}{tracking_param}&quote={encoded_joke}",
             "Instagram": f"https://www.instagram.com/?url={app_url}{tracking_param}",
             "Reddit": f"https://www.reddit.com/submit?url={app_url}{tracking_param}&title={encoded_joke}",
             "Email": f"mailto:?subject=Daily%20Joke%20Club&body={encoded_joke}%20-%20Join%20at%20{app_url}{tracking_param}",
@@ -339,7 +339,7 @@ class DailyJokeClub:
         }
         subscription_data = {
             "plan_id": plan_id,
-            "start_time": (datetime.utcnow() + timedelta(minutes=1)).isoformat() + "Z",
+            "start_time": (datetime.utcnow() + datetime.timedelta(minutes=1)).isoformat() + "Z",
             "subscriber": {
                 "name": {"given_name": "Joke", "surname": "Lover"},
                 "email_address": "jokelover@example.com"  # يمكن تخصيصه لاحقًا
@@ -398,19 +398,23 @@ class DailyJokeClub:
         with self.lock:
             conn = sqlite3.connect(self.db_path)
             c = conn.cursor()
+            # إنشاء سجل المستخدم إذا لم يكن موجودًا
             c.execute("INSERT OR IGNORE INTO users (user_id, subscription_status, last_visited_date) VALUES (?, ?, ?)", 
                      (user_id, False, today_str))
+            # تحديث الحالة
             if subscribed and subscription_id:
                 c.execute("UPDATE users SET subscription_status = 1, subscription_id = ? WHERE user_id = ?", 
                          (subscription_id, user_id))
             if laughed:
                 c.execute("UPDATE users SET laugh_count = laugh_count + 1 WHERE user_id = ?", (user_id,))
+            # تحديث الأيام النشطة فقط إذا لم يكن اليوم مسجلاً من قبل
             c.execute("SELECT last_visited_date FROM users WHERE user_id = ?", (user_id,))
             last_date = c.fetchone()[0]
             if last_date != today_str:
                 c.execute("UPDATE users SET days_active = days_active + 1, last_visited_date = ? WHERE user_id = ?", 
                          (today_str, user_id))
             conn.commit()
+            # استرجاع الإحصائيات
             c.execute("SELECT laugh_count, days_active, subscription_status, subscription_id FROM users WHERE user_id = ?", 
                      (user_id,))
             stats = c.fetchone()
@@ -479,6 +483,7 @@ class DailyJokeClub:
                 if st.button("Subscribe for $1/month", key="subscribe_btn", help="Join the laughter revolution!", type="primary"):
                     access_token = self.get_paypal_token()
                     if access_token:
+                        # إنشاء خطة اشتراك
                         plan_id = self.create_paypal_subscription_plan(access_token)
                         if plan_id:
                             subscription_id, approval_url = self.create_paypal_subscription(access_token, plan_id)
