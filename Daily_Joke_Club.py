@@ -1,13 +1,11 @@
 import streamlit as st
 import random
 import urllib.parse
-from datetime import date
+from datetime import date, datetime
 import requests
 import json
 from pathlib import Path
 import time
-import base64
-from streamlit.components.v1 import html
 import sqlite3
 import hashlib
 from threading import Lock
@@ -219,10 +217,11 @@ class DailyJokeClub:
                 category TEXT,
                 added_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )''')
-            # جدول المستخدمين
+            # جدول المستخدمين مع حقل لتخزين معرف الاشتراك في PayPal
             c.execute('''CREATE TABLE IF NOT EXISTS users (
                 user_id TEXT PRIMARY KEY,
-                subscription_status BOOLEAN,
+                subscription_status BOOLEAN DEFAULT 0,
+                subscription_id TEXT DEFAULT NULL,
                 join_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 laugh_count INTEGER DEFAULT 0,
                 days_active INTEGER DEFAULT 0,
@@ -269,7 +268,7 @@ class DailyJokeClub:
             "WhatsApp": f"https://wa.me/?text={encoded_joke}%20-%20Join%20Daily%20Joke%20Club%20at%20{app_url}{tracking_param}%20😂",
             "Telegram": f"https://t.me/share/url?url={app_url}{tracking_param}&text={encoded_joke}%20-%20Daily%20Joke%20Club",
             "Twitter": f"https://twitter.com/intent/tweet?text={encoded_joke}%20%23DailyJokeClub%20{app_url}{tracking_param}",
-            "Facebook": f"https://www.facebook.com/sharer/sharer.php?u={app_url}{tracking_param}&quote={encoded_joke}",
+            "Facebook": f"https://www.facebook.com/sharer/sharer.php?u={app_url}{tracking_param}"e={encoded_joke}",
             "Instagram": f"https://www.instagram.com/?url={app_url}{tracking_param}",
             "Reddit": f"https://www.reddit.com/submit?url={app_url}{tracking_param}&title={encoded_joke}",
             "Email": f"mailto:?subject=Daily%20Joke%20Club&body={encoded_joke}%20-%20Join%20at%20{app_url}{tracking_param}",
@@ -277,16 +276,115 @@ class DailyJokeClub:
         }
 
     def get_paypal_token(self):
-        """Get PayPal access token with advanced error handling"""
+        """Get PayPal access token"""
         url = f"{PAYPAL_API}/v1/oauth2/token"
         headers = {"Accept": "application/json", "Accept-Language": "en_US"}
         data = {"grant_type": "client_credentials"}
         try:
-            response = requests.post(url, auth=(PAYPAL_CLIENT_ID, PAYPAL_SECRET), data=data, timeout=10)
-            return response.json().get("access_token") if response.status_code == 200 else None
+            response = requests.post(url, auth=(PAYPAL_CLIENT_ID, PAYPAL_SECRET), headers=headers, data=data, timeout=10)
+            if response.status_code == 200:
+                return response.json().get("access_token")
+            else:
+                st.error(f"Failed to get token: {response.text}")
+                return None
         except requests.RequestException as e:
             st.error(f"Payment error: {str(e)}")
             return None
+
+    def create_paypal_subscription_plan(self, access_token):
+        """Create a PayPal subscription plan for $1/month using real product ID"""
+        url = f"{PAYPAL_API}/v1/billing/plans"
+        headers = {
+            "Authorization": f"Bearer {access_token}",
+            "Content-Type": "application/json",
+            "Accept": "application/json"
+        }
+        plan_data = {
+            "product_id": "PROD-8AY05914TG773703T",  # معرف المنتج الحقيقي الخاص بك
+            "name": "Daily Joke Club Subscription",
+            "description": "Monthly subscription for Daily Joke Club - $1/month",
+            "status": "ACTIVE",
+            "billing_cycles": [{
+                "frequency": {"interval_unit": "MONTH", "interval_count": 1},
+                "tenure_type": "REGULAR",
+                "sequence": 1,
+                "total_cycles": 0,  # لا نهائي
+                "pricing_scheme": {"fixed_price": {"value": "1", "currency_code": "USD"}}
+            }],
+            "payment_preferences": {
+                "auto_bill_outstanding": True,
+                "setup_fee": {"value": "0", "currency_code": "USD"},
+                "setup_fee_failure_action": "CONTINUE",
+                "payment_failure_threshold": 3
+            }
+        }
+        try:
+            response = requests.post(url, headers=headers, json=plan_data, timeout=10)
+            if response.status_code == 201:
+                return response.json().get("id")
+            else:
+                st.error(f"Failed to create plan: {response.text}")
+                return None
+        except requests.RequestException as e:
+            st.error(f"Plan creation error: {str(e)}")
+            return None
+
+    def create_paypal_subscription(self, access_token, plan_id):
+        """Create a subscription for the user"""
+        url = f"{PAYPAL_API}/v1/billing/subscriptions"
+        headers = {
+            "Authorization": f"Bearer {access_token}",
+            "Content-Type": "application/json",
+            "Accept": "application/json"
+        }
+        subscription_data = {
+            "plan_id": plan_id,
+            "start_time": (datetime.utcnow() + timedelta(minutes=1)).isoformat() + "Z",
+            "subscriber": {
+                "name": {"given_name": "Joke", "surname": "Lover"},
+                "email_address": "jokelover@example.com"  # يمكن تخصيصه لاحقًا
+            },
+            "application_context": {
+                "brand_name": "Daily Joke Club",
+                "locale": "en-US",
+                "shipping_preference": "NO_SHIPPING",
+                "user_action": "SUBSCRIBE_NOW",
+                "payment_method": {"payer_selected": "PAYPAL", "payee_preferred": "IMMEDIATE_PAYMENT_REQUIRED"},
+                "return_url": "https://daily-jokes.streamlit.app/success",
+                "cancel_url": "https://daily-jokes.streamlit.app/cancel"
+            }
+        }
+        try:
+            response = requests.post(url, headers=headers, json=subscription_data, timeout=10)
+            if response.status_code == 201:
+                subscription = response.json()
+                return subscription.get("id"), subscription.get("links")[0].get("href")  # رابط الموافقة
+            else:
+                st.error(f"Failed to create subscription: {response.text}")
+                return None, None
+        except requests.RequestException as e:
+            st.error(f"Subscription creation error: {str(e)}")
+            return None, None
+
+    def verify_paypal_subscription(self, access_token, subscription_id):
+        """Verify the subscription status"""
+        url = f"{PAYPAL_API}/v1/billing/subscriptions/{subscription_id}"
+        headers = {
+            "Authorization": f"Bearer {access_token}",
+            "Content-Type": "application/json",
+            "Accept": "application/json"
+        }
+        try:
+            response = requests.get(url, headers=headers, timeout=10)
+            if response.status_code == 200:
+                status = response.json().get("status")
+                return status == "ACTIVE"  # التحقق من أن الاشتراك نشط
+            else:
+                st.error(f"Failed to verify subscription: {response.text}")
+                return False
+        except requests.RequestException as e:
+            st.error(f"Verification error: {str(e)}")
+            return False
 
     def get_user_id(self):
         """Generate a unique user ID based on session"""
@@ -294,32 +392,30 @@ class DailyJokeClub:
             st.session_state.user_id = hashlib.md5(str(time.time()).encode()).hexdigest()
         return st.session_state.user_id
 
-    def update_user_stats(self, user_id, subscribed=False, laughed=False):
-        """Update user stats in the database, including last visited date"""
+    def update_user_stats(self, user_id, subscribed=False, subscription_id=None, laughed=False):
+        """Update user stats in the database, including last visited date and subscription ID"""
         today_str = date.today().isoformat()
         with self.lock:
             conn = sqlite3.connect(self.db_path)
             c = conn.cursor()
-            # إنشاء سجل المستخدم إذا لم يكن موجودًا
             c.execute("INSERT OR IGNORE INTO users (user_id, subscription_status, last_visited_date) VALUES (?, ?, ?)", 
                      (user_id, False, today_str))
-            # تحديث الحالة
-            if subscribed:
-                c.execute("UPDATE users SET subscription_status = 1 WHERE user_id = ?", (user_id,))
+            if subscribed and subscription_id:
+                c.execute("UPDATE users SET subscription_status = 1, subscription_id = ? WHERE user_id = ?", 
+                         (subscription_id, user_id))
             if laughed:
                 c.execute("UPDATE users SET laugh_count = laugh_count + 1 WHERE user_id = ?", (user_id,))
-            # تحديث الأيام النشطة فقط إذا لم يكن اليوم مسجلاً من قبل
             c.execute("SELECT last_visited_date FROM users WHERE user_id = ?", (user_id,))
             last_date = c.fetchone()[0]
             if last_date != today_str:
                 c.execute("UPDATE users SET days_active = days_active + 1, last_visited_date = ? WHERE user_id = ?", 
                          (today_str, user_id))
             conn.commit()
-            # استرجاع الإحصائيات
-            c.execute("SELECT laugh_count, days_active FROM users WHERE user_id = ?", (user_id,))
+            c.execute("SELECT laugh_count, days_active, subscription_status, subscription_id FROM users WHERE user_id = ?", 
+                     (user_id,))
             stats = c.fetchone()
             conn.close()
-            return stats[0] if stats else 0, stats[1] if stats else 0
+            return stats[0] if stats else 0, stats[1] if stats else 0, stats[2] if stats else False, stats[3] if stats else None
 
     def show_joke_club(self):
         """Display the ultimate joke club interface with maximum features"""
@@ -341,7 +437,7 @@ class DailyJokeClub:
             st.header("🎉 Daily Joke Club Hub")
             st.write("Join millions of laughers worldwide! 😂")
             st.image("https://via.placeholder.com/150x150.png?text=Laugh+Daily", caption="Your Daily Giggle!")
-            laugh_count, days_active = self.update_user_stats(user_id)
+            laugh_count, days_active, subscribed, subscription_id = self.update_user_stats(user_id)
             st.metric("Your Laughs", laugh_count)
             st.metric("Days Active", days_active)
             st.metric("Global Members", "1,000,000+", "10,000+ this month")
@@ -370,7 +466,9 @@ class DailyJokeClub:
 
         # حالة الاشتراك
         if "subscribed" not in st.session_state:
-            st.session_state.subscribed = False
+            st.session_state.subscribed = subscribed
+        if "subscription_id" not in st.session_state:
+            st.session_state.subscription_id = subscription_id
 
         # التحقق من الاشتراك
         if not st.session_state.subscribed:
@@ -379,17 +477,39 @@ class DailyJokeClub:
             col1, col2, col3 = st.columns([1, 2, 1])
             with col2:
                 if st.button("Subscribe for $1/month", key="subscribe_btn", help="Join the laughter revolution!", type="primary"):
-                    token = self.get_paypal_token()
-                    if token:
+                    access_token = self.get_paypal_token()
+                    if access_token:
+                        plan_id = self.create_paypal_subscription_plan(access_token)
+                        if plan_id:
+                            subscription_id, approval_url = self.create_paypal_subscription(access_token, plan_id)
+                            if subscription_id and approval_url:
+                                st.write("Please approve the subscription to complete payment:")
+                                st.markdown(f"[Click here to approve payment]({approval_url})")
+                                st.session_state.pending_subscription_id = subscription_id
+                                st.session_state.access_token = access_token
+                            else:
+                                st.error("Failed to initiate subscription. Please try again.")
+                        else:
+                            st.error("Failed to create subscription plan. Please try again.")
+                    else:
+                        st.error("Failed to connect to PayPal. Please try again.")
+            st.markdown("[Test with PayPal Sandbox](https://www.sandbox.paypal.com) - Use a test account!")
+
+            # التحقق من الموافقة على الاشتراك
+            if "pending_subscription_id" in st.session_state and "access_token" in st.session_state:
+                if st.button("Confirm Payment", key="confirm_btn"):
+                    if self.verify_paypal_subscription(st.session_state.access_token, st.session_state.pending_subscription_id):
                         st.session_state.subscribed = True
-                        self.update_user_stats(user_id, subscribed=True)
+                        st.session_state.subscription_id = st.session_state.pending_subscription_id
+                        self.update_user_stats(user_id, subscribed=True, subscription_id=st.session_state.subscription_id)
                         st.success("Payment successful! Welcome to Daily Joke Club! 🌟")
                         st.balloons()
                         st.snow()
                         st.toast("You’re in! Get ready to laugh daily! 😂", icon="🎉")
+                        del st.session_state.pending_subscription_id
+                        del st.session_state.access_token
                     else:
-                        st.error("Payment failed. Try again! 😕")
-            st.markdown("[Pay via PayPal Sandbox](https://www.sandbox.paypal.com) - Use a test account!")
+                        st.error("Payment not yet approved or failed. Please complete the payment or try again.")
         else:
             # عرض النكتة اليومية بخط كبير للمشتركين
             joke_index = self.get_daily_joke_index()
@@ -408,31 +528,15 @@ class DailyJokeClub:
 
             # ميزات إضافية متطورة
             st.subheader("Your Laugh Dashboard 🌟")
-            laugh_count, days_active = self.update_user_stats(user_id)
+            laugh_count, days_active, _, _ = self.update_user_stats(user_id)
             col1, col2, col3 = st.columns(3)
             col1.metric("Your Laughs", laugh_count, "+1 today" if laugh_count > 0 else "0")
             col2.metric("Days Active", days_active, "+1 today")
             col3.metric("Global Laughs", "50,000,000+", "100,000+ today")
             if st.button("I Laughed! 😂", key="laugh_btn"):
-                laugh_count, days_active = self.update_user_stats(user_id, laughed=True)
+                laugh_count, days_active, _, _ = self.update_user_stats(user_id, laughed=True)
                 st.success(f"You’ve laughed {laugh_count} times over {days_active} days! Legendary! 🌟")
                 st.confetti()
-
-            # صوت ضحك وفيديو فكاهي اختياري
-            st.subheader("Enhance Your Laugh 😂")
-            laugh_option = st.radio("Add some fun:", ("None", "Laugh Sound", "Funny Video"))
-            if laugh_option == "Laugh Sound":
-                if Path("laugh.mp3").exists():
-                    laugh_audio = base64.b64encode(open("laugh.mp3", "rb").read()).decode()
-                    html(f"""
-                    <audio autoplay>
-                        <source src="data:audio/mp3;base64,{laugh_audio}" type="audio/mp3">
-                    </audio>
-                    """)
-                else:
-                    st.warning("Laugh sound unavailable. Add 'laugh.mp3' to enable! 😂")
-            elif laugh_option == "Funny Video":
-                st.video("https://www.youtube.com/watch?v=3tmd-ClSWD0")  # فيديو فكاهي آمن، استبدل حسب الحاجة
 
             # إضافة نكتة من المستخدم
             st.subheader("Submit Your Own Joke! ✍️")
