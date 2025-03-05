@@ -19,7 +19,7 @@ PAYPAL_API = "https://api-m.sandbox.paypal.com"
 
 class DailyJokeClub:
     def __init__(self):
-        # تعيين النكات الأولية أولاً
+        # تعريف قائمة النكات الأولية أولاً
         self.initial_jokes = [
             "Why don’t skeletons fight? They don’t have the guts! 💀👊",
             "What do you call a bear with no teeth? A gummy bear! 🐻🍬",
@@ -196,16 +196,16 @@ class DailyJokeClub:
             "What do you call a lion who loves disco? A mane groover! 🦁🕺"
         ]
 
-        # إعداد قاعدة البيانات بعد تعيين النكات الأولية
+        # إعداد قاعدة البيانات بعد تعريف النكات
         self.db_path = "joke_club.db"
         self.lock = Lock()
         self.initialize_database()
 
-        # تحميل النكات من قاعدة البيانات
-        self.load_jokes_from_db()
-
         # نكتة مجانية ثابتة كمعاينة
         self.free_joke = "Why did the chicken join a band? To play the egguitar! 🐔🎸"
+
+        # تحميل النكات من قاعدة البيانات
+        self.load_jokes_from_db()
 
     def initialize_database(self):
         """Initialize SQLite database for jokes and user subscriptions"""
@@ -225,7 +225,8 @@ class DailyJokeClub:
                 subscription_status BOOLEAN,
                 join_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 laugh_count INTEGER DEFAULT 0,
-                days_active INTEGER DEFAULT 0
+                days_active INTEGER DEFAULT 0,
+                last_visited_date TEXT DEFAULT NULL
             )''')
             # إضافة النكات الأولية إذا لم تكن موجودة
             for joke in self.initial_jokes:
@@ -294,16 +295,27 @@ class DailyJokeClub:
         return st.session_state.user_id
 
     def update_user_stats(self, user_id, subscribed=False, laughed=False):
-        """Update user stats in the database"""
+        """Update user stats in the database, including last visited date"""
+        today_str = date.today().isoformat()
         with self.lock:
             conn = sqlite3.connect(self.db_path)
             c = conn.cursor()
-            c.execute("INSERT OR IGNORE INTO users (user_id, subscription_status) VALUES (?, ?)", (user_id, False))
+            # إنشاء سجل المستخدم إذا لم يكن موجودًا
+            c.execute("INSERT OR IGNORE INTO users (user_id, subscription_status, last_visited_date) VALUES (?, ?, ?)", 
+                     (user_id, False, today_str))
+            # تحديث الحالة
             if subscribed:
                 c.execute("UPDATE users SET subscription_status = 1 WHERE user_id = ?", (user_id,))
             if laughed:
-                c.execute("UPDATE users SET laugh_count = laugh_count + 1, days_active = days_active + 1 WHERE user_id = ?", (user_id,))
+                c.execute("UPDATE users SET laugh_count = laugh_count + 1 WHERE user_id = ?", (user_id,))
+            # تحديث الأيام النشطة فقط إذا لم يكن اليوم مسجلاً من قبل
+            c.execute("SELECT last_visited_date FROM users WHERE user_id = ?", (user_id,))
+            last_date = c.fetchone()[0]
+            if last_date != today_str:
+                c.execute("UPDATE users SET days_active = days_active + 1, last_visited_date = ? WHERE user_id = ?", 
+                         (today_str, user_id))
             conn.commit()
+            # استرجاع الإحصائيات
             c.execute("SELECT laugh_count, days_active FROM users WHERE user_id = ?", (user_id,))
             stats = c.fetchone()
             conn.close()
@@ -349,7 +361,7 @@ class DailyJokeClub:
         }
         </style>
         """, unsafe_allow_html=True)
-        st.write("The world’s ultimate source for Crustdaily laughter – subscribe for just $1/month! 🤣")
+        st.write("The world’s ultimate source for daily laughter – subscribe for just $1/month! 🤣")
 
         # عرض النكتة المجانية بخط كبير
         st.subheader("🆓 Free Joke Preview")
@@ -374,7 +386,6 @@ class DailyJokeClub:
                         st.success("Payment successful! Welcome to Daily Joke Club! 🌟")
                         st.balloons()
                         st.snow()
-                        st.fireworks()
                         st.toast("You’re in! Get ready to laugh daily! 😂", icon="🎉")
                     else:
                         st.error("Payment failed. Try again! 😕")
@@ -411,17 +422,17 @@ class DailyJokeClub:
             st.subheader("Enhance Your Laugh 😂")
             laugh_option = st.radio("Add some fun:", ("None", "Laugh Sound", "Funny Video"))
             if laugh_option == "Laugh Sound":
-                laugh_audio = base64.b64encode(open("laugh.mp3", "rb").read()).decode() if Path("laugh.mp3").exists() else None
-                if laugh_audio:
+                if Path("laugh.mp3").exists():
+                    laugh_audio = base64.b64encode(open("laugh.mp3", "rb").read()).decode()
                     html(f"""
                     <audio autoplay>
                         <source src="data:audio/mp3;base64,{laugh_audio}" type="audio/mp3">
                     </audio>
                     """)
                 else:
-                    st.warning("Add a 'laugh.mp3' file to hear the fun! 😂")
+                    st.warning("Laugh sound unavailable. Add 'laugh.mp3' to enable! 😂")
             elif laugh_option == "Funny Video":
-                st.video("https://www.youtube.com/watch?v=dQw4w9WgXcQ")  # Rickroll كمثال، استبدل برابط فكاهي
+                st.video("https://www.youtube.com/watch?v=3tmd-ClSWD0")  # فيديو فكاهي آمن، استبدل حسب الحاجة
 
             # إضافة نكتة من المستخدم
             st.subheader("Submit Your Own Joke! ✍️")
@@ -449,8 +460,12 @@ class DailyJokeClub:
         st.write("© 2025 Daily Joke Club - Powered by Laughter, Streamlit, and You! 😂")
 
 def main():
-    joke_club = DailyJokeClub()
-    joke_club.show_joke_club()
+    try:
+        joke_club = DailyJokeClub()
+        joke_club.show_joke_club()
+    except Exception as e:
+        st.error(f"An unexpected error occurred: {str(e)}")
+        st.write("Please try refreshing the page or contact support if the issue persists.")
 
 if __name__ == "__main__":
     main()
