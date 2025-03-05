@@ -1,7 +1,7 @@
 import streamlit as st
 import random
 import urllib.parse
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 import requests
 import json
 from pathlib import Path
@@ -339,7 +339,7 @@ class DailyJokeClub:
         }
         subscription_data = {
             "plan_id": plan_id,
-            "start_time": (datetime.utcnow() + datetime.timedelta(minutes=1)).isoformat() + "Z",
+            "start_time": (datetime.utcnow() + timedelta(minutes=1)).isoformat() + "Z",
             "subscriber": {
                 "name": {"given_name": "Joke", "surname": "Lover"},
                 "email_address": "jokelover@example.com"  # يمكن تخصيصه لاحقًا
