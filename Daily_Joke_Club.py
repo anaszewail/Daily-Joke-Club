@@ -1,7 +1,7 @@
 import streamlit as st
 import random
 import urllib.parse
-from datetime import date, datetime
+from datetime import date
 import requests
 import json
 from pathlib import Path
@@ -125,7 +125,7 @@ class DailyJokeClub:
             "What do you call a fox who loves math? A calcu-vixen! 🦊➕",
             "Why did the toaster refuse breakfast? It was burned out! 🍞🔥",
             "What’s a dolphin’s favorite game? Fin-tastic tag! 🐬🏃",
-            "Why don’t rivers gossip? They just flow with it! 🌊🤫",
+            "Why don’t rivers gossip? YAThey just flow with it! 🌊🤫",
             "What do you call a sloth who sings? A nap-tune crooner! 🦥🎤",
             "Why did the peach stop talking? It didn’t want to pit-y anyone! 🍑😶",
             "Why don’t planets argue? They’re too spaced out! 🪐🤐",
@@ -268,7 +268,7 @@ class DailyJokeClub:
             "WhatsApp": f"https://wa.me/?text={encoded_joke}%20-%20Join%20Daily%20Joke%20Club%20at%20{app_url}{tracking_param}%20😂",
             "Telegram": f"https://t.me/share/url?url={app_url}{tracking_param}&text={encoded_joke}%20-%20Daily%20Joke%20Club",
             "Twitter": f"https://twitter.com/intent/tweet?text={encoded_joke}%20%23DailyJokeClub%20{app_url}{tracking_param}",
-            "Facebook": f"https://www.facebook.com/sharer/sharer.php?u={app_url}{tracking_param}"e={encoded_joke}",
+            "Facebook": f"https://www.facebook.com/sharer/sharer.php?u={app_url}{tracking_param}&quote={encoded_joke}",
             "Instagram": f"https://www.instagram.com/?url={app_url}{tracking_param}",
             "Reddit": f"https://www.reddit.com/submit?url={app_url}{tracking_param}&title={encoded_joke}",
             "Email": f"mailto:?subject=Daily%20Joke%20Club&body={encoded_joke}%20-%20Join%20at%20{app_url}{tracking_param}",
@@ -366,7 +366,7 @@ class DailyJokeClub:
             st.info("Only $1/month – 3 cents a day for endless, premium laughter! 🎉")
             col1, col2, col3 = st.columns([1, 2, 1])
             with col2:
-                if st.button("Subscribe for $1/month", key="subscribe_btn", help="Join the global laughter revolution!", type="primary"):
+                if st.button("Subscribe for $1/month", key="subscribe_btn", help="Join the laughter revolution!", type="primary"):
                     token = self.get_paypal_token()
                     if token:
                         st.session_state.subscribed = True
