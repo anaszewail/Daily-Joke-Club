@@ -10,7 +10,6 @@ import base64
 from streamlit.components.v1 import html
 import sqlite3
 import hashlib
-import os
 from threading import Lock
 
 # بيانات PayPal Sandbox
@@ -20,12 +19,7 @@ PAYPAL_API = "https://api-m.sandbox.paypal.com"
 
 class DailyJokeClub:
     def __init__(self):
-        # إعداد قاعدة بيانات SQLite لتخزين النكات والمستخدمين
-        self.db_path = "joke_club.db"
-        self.lock = Lock()
-        self.initialize_database()
-
-        # قائمة نكات أولية (200 نكتة كبداية، مع قاعدة بيانات للتوسع إلى ملايين)
+        # تعيين النكات الأولية أولاً
         self.initial_jokes = [
             "Why don’t skeletons fight? They don’t have the guts! 💀👊",
             "What do you call a bear with no teeth? A gummy bear! 🐻🍬",
@@ -125,7 +119,7 @@ class DailyJokeClub:
             "What do you call a fox who loves math? A calcu-vixen! 🦊➕",
             "Why did the toaster refuse breakfast? It was burned out! 🍞🔥",
             "What’s a dolphin’s favorite game? Fin-tastic tag! 🐬🏃",
-            "Why don’t rivers gossip? YAThey just flow with it! 🌊🤫",
+            "Why don’t rivers gossip? They just flow with it! 🌊🤫",
             "What do you call a sloth who sings? A nap-tune crooner! 🦥🎤",
             "Why did the peach stop talking? It didn’t want to pit-y anyone! 🍑😶",
             "Why don’t planets argue? They’re too spaced out! 🪐🤐",
@@ -201,11 +195,17 @@ class DailyJokeClub:
             "Why did the peach refuse to talk? It was too fuzzy to chat! 🍑🤐",
             "What do you call a lion who loves disco? A mane groover! 🦁🕺"
         ]
-        # نكتة مجانية ثابتة كمعاينة
-        self.free_joke = "Why did the chicken join a band? To play the egguitar! 🐔🎸"
+
+        # إعداد قاعدة البيانات بعد تعيين النكات الأولية
+        self.db_path = "joke_club.db"
+        self.lock = Lock()
+        self.initialize_database()
 
         # تحميل النكات من قاعدة البيانات
         self.load_jokes_from_db()
+
+        # نكتة مجانية ثابتة كمعاينة
+        self.free_joke = "Why did the chicken join a band? To play the egguitar! 🐔🎸"
 
     def initialize_database(self):
         """Initialize SQLite database for jokes and user subscriptions"""
@@ -349,7 +349,7 @@ class DailyJokeClub:
         }
         </style>
         """, unsafe_allow_html=True)
-        st.write("The world’s ultimate source for daily laughter – subscribe for just $1/month! 🤣")
+        st.write("The world’s ultimate source for Crustdaily laughter – subscribe for just $1/month! 🤣")
 
         # عرض النكتة المجانية بخط كبير
         st.subheader("🆓 Free Joke Preview")
